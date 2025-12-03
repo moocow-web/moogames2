@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Inventory System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vanta/0.5.24/vanta.birds.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+            height: 100vh;
+            position: relative;
+        }
+
+        #vanta-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+
+        .inventory-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            perspective: 1000px;
+            overflow: hidden;
+        }
+
+        .camera-view {
+            position: absolute;
+            width: 3000px;
+            height: 3000px;
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+        }
+
+        .inventory-grid {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: grid;
+            grid-template-columns: repeat(20, 120px);
+            grid-template-rows: repeat(20, 120px);
+            gap: 15px;
+            padding: 30px;
+        }
+
+        .inventory-item {
+            width: 120px;
+            height: 120px;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .inventory-item:hover {
+            transform: translateY(-8px) scale(1.05);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .inventory-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+
+        .inventory-item:hover img {
+            transform: scale(1.1);
+        }
+
+        .item-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+            color: white;
+            padding: 8px;
+            font-size: 12px;
+            text-align: center;
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+        }
+
+        .inventory-item:hover .item-overlay {
+            transform: translateY(0);
+        }
+
+        .controls-info {
+            position: fixed;
+            top: 30px;
+            left: 30px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            z-index: 1000;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .stats-panel {
+            position: fixed;
+            top: 30px;
+            right: 30px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            z-index: 1000;
+            font-size: 14px;
+            min-width: 200px;
+        }
+
+        .coordinate-display {
+            position: fixed;
+            bottom: 30px;
+            left: 30px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            z-index: 1000;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            transition: opacity 0.5s ease-out;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: white;
+            font-size: 18px;
+            font-weight: 300;
+        }
+
+        @media (max-width: 768px) {
+            .inventory-grid {
+                grid-template-columns: repeat(10, 80px);
+                grid-template-rows: repeat(10, 80px);
+                gap: 10px;
+            }
+            
+            .inventory-item {
+                width: 80px;
+                height: 80px;
+            }
+            
+            .controls-info, .stats-panel {
+                font-size: 12px;
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="vanta-bg"></div>
+    
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Initializing Inventory System...</div>
+    </div>
+
+    <div class="inventory-container">
+        <div class="camera-view" id="cameraView">
+            <div class="inventory-grid" id="inventoryGrid">
+                <!-- Inventory items will be generated here -->
+            </div>
+        </div>
+    </div>
+
+    <div class="controls-info">
+        <h3>🎮 Controls</h3>
+        <p>↑↓←→ Arrow Keys: Move Camera</p>
+        <p>🖱️ Mouse: Hover Items</p>
+        <p>🖱️ Click: Open Item</p>
+        <p>🏠 Home: Reset Position</p>
+    </div>
+
+    <div class="stats-panel">
+        <h3>📊 Inventory Stats</h3>
+        <p>Total Items: <span id="totalItems">400</span></p>
+        <p>Viewable: <span id="viewableItems">0</span></p>
+        <p>Camera Position:</p>
+        <p>X: <span id="cameraX">0</span></p>
+        <p>Y: <span id="cameraY">0</span></p>
+    </div>
+
+    <div class="coordinate-display">
+        <div>Grid: <span id="gridCoords">0, 0</span></div>
+        <div>Viewport: <span id="viewportCoords">0, 0</span></div>
+    </div>
+
+    <script>
+        class InventorySystem {
+            constructor() {
+                this.camera = {
+                    x: 0,
+                    y: 0,
+                    speed: 25,
+                    maxX: 1200,
+                    maxY: 1200
+                };
+                
+                this.keys = {};
+                this.items = [];
+                this.itemTypes = [
+                    '📦', '🎁', '📱', '💻', '🎮', '📷', '🎧', '⌚',
+                    '📚', '✏️', '🖌️', '🎨', '🏆', '💎', '🔮', '🎯',
+                    '🚀', '🛸', '⭐', '🌙', '☀️', '🌈', '🔥', '❄️',
+                    '⚡', '🌊', '🌍', '🌸', '🍀', '🌿', '🦋', '🦄'
+                ];
+                
+                this.init();
+            }
+
+            init() {
+                this.setupVantaBackground();
+                this.generateItems();
+                this.setupEventListeners();
+                this.startGameLoop();
+                this.hideLoadingScreen();
+            }
+
+            setupVantaBackground() {
+                VANTA.BIRDS({
+                    el: "#vanta-bg",
+                    mouseControls: true,
+                    touchControls: true,
+                    gyroControls: false,
+                    minHeight: 200.00,
+                    minWidth: 200.00,
+                    scale: 1.00,
+                    scaleMobile: 1.00,
+                    backgroundColor: 0x1a1a2e,
+                    color1: 0x667eea,
+                    color2: 0x764ba2,
+                    colorMode: "lerpGradient",
+                    birdSize: 1.20,
+                    wingSpan: 25.00,
+                    speedLimit: 3.00,
+                    separation: 20.00,
+                    alignment: 20.00,
+                    cohesion: 20.00,
+                    quantity: 3.00
+                });
+            }
+
+            generateItems() {
+                const grid = document.getElementById('inventoryGrid');
+                const totalItems = 400; // 20x20 grid
+                
+                for (let i = 0; i < totalItems; i++) {
+                    const item = this.createInventoryItem(i);
+                    this.items.push(item);
+                    grid.appendChild(item.element);
+                }
+                
+                this.updateStats();
+            }
+
+            createInventoryItem(index) {
+                const element = document.createElement('div');
+                element.className = 'inventory-item';
+                element.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 48px; background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));">
+                        ${this.itemTypes[index % this.itemTypes.length]}
+                    </div>
+                    <div class="item-overlay">
+                        Item #${index + 1}
+                    </div>
+                `;
+                
+                element.addEventListener('click', () => {
+                    this.openItem(index);
+                });
+
+                element.addEventListener('mouseenter', () => {
+                    this.showItemTooltip(index);
+                });
+
+                return {
+                    element,
+                    index,
+                    type: this.itemTypes[index % this.itemTypes.length]
+                };
+            }
+
+            openItem(index) {
+                const item = this.items[index];
+                console.log(`Opening item ${index + 1}: ${item.type}`);
+                
+                // Create a simple modal effect
+                this.showItemModal(item);
+                
+                // In a real application, this would navigate to the item details
+                // window.open('about:blank', '_blank');
+            }
+
+            showItemModal(item) {
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(0, 0, 0, 0.8);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 3000;
+                    backdrop-filter: blur(10px);
+                `;
+                
+                modal.innerHTML = `
+                    <div style="
+                        background: rgba(255, 255, 255, 0.1);
+                        backdrop-filter: blur(20px);
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                        border-radius: 16px;
+                        padding: 40px;
+                        text-align: center;
+                        color: white;
+                        max-width: 400px;
+                        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+                    ">
+                        <div style="font-size: 80px; margin-bottom: 20px;">${item.type}</div>
+                        <h2 style="margin-bottom: 10px;">Item #${item.index + 1}</h2>
+                        <p style="margin-bottom: 30px; opacity: 0.8;">This is a placeholder item in your inventory system.</p>
+                        <button onclick="this.parentElement.parentElement.remove()" style="
+                            background: rgba(255, 255, 255, 0.2);
+                            border: 1px solid rgba(255, 255, 255, 0.3);
+                            color: white;
+                            padding: 12px 24px;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-size: 16px;
+                            transition: all 0.3s ease;
+                        " onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">Close</button>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+                
+                // Close on background click
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        modal.remove();
+                    }
+                });
+            }
+
+            showItemTooltip(index) {
+                // Could implement tooltip here
+                console.log(`Hovering item ${index + 1}`);
+            }
+
+            setupEventListeners() {
+                document.addEventListener('keydown', (e) => {
+                    this.keys[e.key] = true;
+                    
+                    if (e.key === 'Home') {
+                        e.preventDefault();
+                        this.resetCamera();
+                    }
+                });
+
+                document.addEventListener('keyup', (e) => {
+                    this.keys[e.key] = false;
+                });
+
+                // Touch controls for mobile
+                let touchStartX = 0;
+                let touchStartY = 0;
+
+                document.addEventListener('touchstart', (e) => {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                });
+
+                document.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    const touchX = e.touches[0].clientX;
+                    const touchY = e.touches[0].clientY;
+                    const deltaX = touchStartX - touchX;
+                    const deltaY = touchStartY - touchY;
+                    
+                    this.camera.x += deltaX * 0.5;
+                    this.camera.y += deltaY * 0.5;
+                    
+                    touchStartX = touchX;
+                    touchStartY = touchY;
+                    
+                    this.updateCameraPosition();
+                });
+            }
+
+            startGameLoop() {
+                const loop = () => {
+                    this.handleInput();
+                    this.updateCameraPosition();
+                    this.updateStats();
+                    requestAnimationFrame(loop);
+                };
+                requestAnimationFrame(loop);
+            }
+
+            handleInput() {
+                let moved = false;
+                
+                if (this.keys['ArrowUp']) {
+                    this.camera.y = Math.max(-this.camera.maxY, this.camera.y - this.camera.speed);
+                    moved = true;
+                }
+                if (this.keys['ArrowDown']) {
+                    this.camera.y = Math.min(this.camera.maxY, this.camera.y + this.camera.speed);
+                    moved = true;
+                }
+                if (this.keys['ArrowLeft']) {
+                    this.camera.x = Math.max(-this.camera.maxX, this.camera.x - this.camera.speed);
+                    moved = true;
+                }
+                if (this.keys['ArrowRight']) {
+                    this.camera.x = Math.min(this.camera.maxX, this.camera.x + this.camera.speed);
+                    moved = true;
+                }
+                
+                if (moved) {
+                    this.updateCoordinateDisplay();
+                }
+            }
+
+            updateCameraPosition() {
+                const cameraView = document.getElementById('cameraView');
+                cameraView.style.transform = `translate(${-this.camera.x}px, ${-this.camera.y}px)`;
+            }
+
+            resetCamera() {
+                this.camera.x = 0;
+                this.camera.y = 0;
+                this.updateCameraPosition();
+                this.updateCoordinateDisplay();
+            }
+
+            updateStats() {
+                const viewport = {
+                    width: window.innerWidth,
+                    height: window.innerHeight
+                };
+                
+                const gridBounds = {
+                    left: this.camera.x,
+                    top: this.camera.y,
+                    right: this.camera.x + viewport.width,
+                    bottom: this.camera.y + viewport.height
+                };
+                
+                let visibleItems = 0;
+                const itemSize = 135; // 120px + 15px gap
+                
+                this.items.forEach((item, index) => {
+                    const row = Math.floor(index / 20);
+                    const col = index % 20;
+                    const itemX = col * itemSize + 1500; // Offset to center
+                    const itemY = row * itemSize + 1500;
+                    
+                    if (itemX >= gridBounds.left - 200 && 
+                        itemX <= gridBounds.right + 200 &&
+                        itemY >= gridBounds.top - 200 && 
+                        itemY <= gridBounds.bottom + 200) {
+                        visibleItems++;
+                    }
+                });
+                
+                document.getElementById('viewableItems').textContent = visibleItems;
+                document.getElementById('cameraX').textContent = Math.round(this.camera.x);
+                document.getElementById('cameraY').textContent = Math.round(this.camera.y);
+            }
+
+            updateCoordinateDisplay() {
+                const gridX = Math.floor((this.camera.x + 1500) / 135);
+                const gridY = Math.floor((this.camera.y + 1500) / 135);
+                
+                document.getElementById('gridCoords').textContent = `${gridX}, ${gridY}`;
+                document.getElementById('viewportCoords').textContent = `${Math.round(this.camera.x)}, ${Math.round(this.camera.y)}`;
+            }
+
+            hideLoadingScreen() {
+                setTimeout(() => {
+                    const loadingScreen = document.getElementById('loadingScreen');
+                    loadingScreen.style.opacity = '0';
+                    setTimeout(() => {
+                        loadingScreen.style.display = 'none';
+                    }, 500);
+                }, 1500);
+            }
+        }
+
+        // Initialize the inventory system when the page loads
+        window.addEventListener('load', () => {
+            new InventorySystem();
+        });
+
+        // Prevent arrow key scrolling
+        window.addEventListener('keydown', (e) => {
+            if(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+    </script>
+</body>
+</html>
